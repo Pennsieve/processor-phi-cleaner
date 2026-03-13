@@ -1,0 +1,5 @@
+awslambdaric
+boto3
+pennsieve2
+requests
+python-dotenv

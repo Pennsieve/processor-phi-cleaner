@@ -1,0 +1,5 @@
+services:
+  processor:
+    build: .
+    platform: linux/amd64
+    env_file: .env

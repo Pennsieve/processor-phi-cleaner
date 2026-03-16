@@ -26,9 +26,10 @@ class PennsieveClient(BaseClient):
         """List all packages in a dataset with source file info (cursor-paginated)."""
         packages = []
         cursor = None
+        page = 0
 
         while True:
-            params = {"pageSize": 100, "includeSourceFiles": "true"}
+            params = {"pageSize": 100}
             if cursor:
                 params["cursor"] = cursor
 
@@ -40,11 +41,18 @@ class PennsieveClient(BaseClient):
             resp.raise_for_status()
             data = resp.json()
 
-            packages.extend(data.get("packages", []))
+            page_packages = data.get("packages", [])
+            packages.extend(page_packages)
+            page += 1
+            log.info(f"    Page {page}: {len(page_packages)} packages (total so far: {len(packages)})")
 
-            cursor = data.get("cursor")
-            if not cursor:
+            new_cursor = data.get("cursor")
+            if not new_cursor:
                 break
+            if new_cursor == cursor:
+                log.warning(f"    API returned same cursor on page {page}, stopping (cursor loop)")
+                break
+            cursor = new_cursor
 
         return packages
 

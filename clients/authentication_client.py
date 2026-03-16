@@ -151,11 +151,15 @@ class KeySecretAuthProvider(AuthProvider):
 
     def refresh(self) -> str:
         if self._refresh_token:
-            log.info("refreshing session token using refresh token")
-            self._session_token = self._cognito.refresh_token(self._refresh_token, self._session_token)
-        else:
-            log.info("no refresh token, re-authenticating with API key/secret")
-            self._session_token, self._refresh_token = self._cognito.authenticate(
-                self._api_key, self._api_secret
-            )
+            try:
+                log.info("refreshing session token using refresh token")
+                self._session_token = self._cognito.refresh_token(self._refresh_token, self._session_token)
+                return self._session_token
+            except Exception:
+                log.warning("refresh token expired, re-authenticating with API key/secret")
+
+        log.info("authenticating with API key/secret")
+        self._session_token, self._refresh_token = self._cognito.authenticate(
+            self._api_key, self._api_secret
+        )
         return self._session_token

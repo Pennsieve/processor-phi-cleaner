@@ -1,4 +1,4 @@
-.PHONY: run test clean-local
+.PHONY: run test clean-local report
 
 run:
 	docker compose down
@@ -10,3 +10,6 @@ test:
 
 clean-local:
 	python clean_local.py example_lay/ex1.lay
+
+report:
+	PROCESS_MODE=report python process.py

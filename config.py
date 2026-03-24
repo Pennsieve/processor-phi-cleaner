@@ -24,6 +24,10 @@ class Config:
         self.API_HOST2 = os.getenv("PENNSIEVE_API_HOST2", "https://api2.pennsieve.net")
 
         self.DATASET_ID = os.getenv("DATASET_ID")
+        self.DATASET_NAME = os.getenv("DATASET_NAME")
         self.FILE_EXTENSIONS = [e.strip().lower() for e in os.getenv("FILE_EXTENSIONS", ".lay").split(",")]
         self.RESTRICTED_WORDS = [w.strip() for w in os.getenv("RESTRICTED_WORDS", "MRN,DOB").split(",") if w.strip()]
+        self.PROCESS_MODE = os.getenv("PROCESS_MODE", "report").strip().lower()
+        if self.PROCESS_MODE not in ("report", "clean"):
+            raise RuntimeError("PROCESS_MODE must be 'report' or 'clean'")
         self.VERBOSE = os.getenv("VERBOSE", "").lower() in ("1", "true", "yes")

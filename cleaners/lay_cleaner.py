@@ -18,17 +18,23 @@ class LayCleaner(FileCleaner):
     Comment line format: timestamp,duration,flag1,flag2,text
     """
 
-    def clean(self, file_path: str, restricted_words: list[str]) -> bool:
+    def find_restricted_words_in_comments(self, file_path: str, restricted_words: list[str]) -> list[dict]:
+        """Find restricted words only in [Comments] text fields.
+
+        Returns a list of matches with keys:
+        - line_number: 1-based line number in the file
+        - words: restricted words found on the line
+        - text: comment text field
+        """
         with open(file_path, "r", encoding="cp1252") as f:
             lines = f.readlines()
 
+        matches = []
         in_comments = False
-        lines_to_remove = set()
 
         for i, line in enumerate(lines):
             stripped = line.strip()
 
-            # Detect section headers
             if stripped.startswith("[") and stripped.endswith("]"):
                 in_comments = stripped == "[Comments]"
                 continue
@@ -36,20 +42,35 @@ class LayCleaner(FileCleaner):
             if not in_comments:
                 continue
 
-            # Comment line: timestamp,duration,flag1,flag2,text
             parts = stripped.split(",", 4)
             if len(parts) < 5:
                 continue
 
             text = parts[4]
+            found_words = []
 
             for word in restricted_words:
                 if re.search(r"\b" + re.escape(word) + r"\b", text, re.IGNORECASE):
-                    lines_to_remove.add(i)
-                    break
+                    found_words.append(word)
 
-        if not lines_to_remove:
+            if found_words:
+                matches.append({
+                    "line_number": i + 1,
+                    "words": found_words,
+                    "text": text,
+                })
+
+        return matches
+
+    def clean(self, file_path: str, restricted_words: list[str]) -> bool:
+        matches = self.find_restricted_words_in_comments(file_path, restricted_words)
+        if not matches:
             return False
+
+        with open(file_path, "r", encoding="cp1252") as f:
+            lines = f.readlines()
+
+        lines_to_remove = {m["line_number"] - 1 for m in matches}
 
         log.info(f"Removing {len(lines_to_remove)} PHI line(s) from {os.path.basename(file_path)}")
         new_lines = [line for i, line in enumerate(lines) if i not in lines_to_remove]

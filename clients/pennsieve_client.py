@@ -22,14 +22,31 @@ class PennsieveClient(BaseClient):
         return {"Authorization": f"Bearer {self.session_manager.session_token}"}
 
     @BaseClient.retry_with_refresh
-    def list_dataset_packages(self, dataset_id):
-        """List all packages in a dataset with source file info (cursor-paginated)."""
+    def get_dataset(self, dataset_id):
+        """Get a dataset by ID."""
+        resp = requests.get(
+            f"{self.api_host}/datasets/{dataset_id}",
+            headers=self._auth_headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    @BaseClient.retry_with_refresh
+    def list_dataset_packages(self, dataset_id, include_source_files=True):
+        """List all packages in a dataset (cursor-paginated).
+
+        Args:
+            include_source_files: If True, includes source file info in each package.
+                Set to False for large datasets where it causes pagination issues.
+        """
         packages = []
         cursor = None
         page = 0
 
         while True:
             params = {"pageSize": 100}
+            if include_source_files:
+                params["includeSourceFiles"] = "true"
             if cursor:
                 params["cursor"] = cursor
 
@@ -116,7 +133,7 @@ class PennsieveClient(BaseClient):
         # target_base_path places the file inside the folder on Pennsieve
         target_path = ""
         if folder_id:
-            target_path = folder_id
+            target_path = str(folder_id)
 
         if verbose:
             log.info(f"Creating manifest for {file_path} (target_path={target_path!r})...")

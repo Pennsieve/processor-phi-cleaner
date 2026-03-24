@@ -21,7 +21,7 @@ if command -v pennsieve >/dev/null 2>&1; then
     echo "Starting Pennsieve Agent..."
     # Unset API host so the agent uses its .io defaults instead of
     # hardcoding api2.pennsieve.net when PENNSIEVE_API_HOST is set.
-    env -u PENNSIEVE_API_HOST -u PENNSIEVE_API_HOST2 pennsieve agent start &
+    env -u PENNSIEVE_API_HOST -u PENNSIEVE_API_HOST2 pennsieve agent start 2>/dev/null &
     AGENT_PID=$!
     # Wait for agent gRPC server on port 9000
     for i in $(seq 1 30); do

@@ -1,5 +1,5 @@
 import os
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from process import get_source_files, main
 
@@ -38,9 +38,11 @@ def _setup_client_for_clean(mock_client, lay_content):
 def _env(**overrides):
     base = {
         "DATASET_ID": "D1",
+        "DATASET_NAME": "Dataset One",
         "INTEGRATION_ID": "",
         "FILE_EXTENSIONS": ".lay",
         "RESTRICTED_WORDS": "MRN,DOB",
+        "PROCESS_MODE": "report",
         "PENNSIEVE_API_KEY": "key",
         "PENNSIEVE_API_SECRET": "secret",
         "PENNSIEVE_API_HOST": "https://api.test",
@@ -67,14 +69,14 @@ class TestGetSourceFiles:
 class TestMain:
     @patch("process.PennsieveClient")
     @patch("process.KeySecretAuthProvider")
-    def test_cleans_matching_package(self, mock_auth_cls, mock_client_cls):
+    def test_reports_matching_package_without_modifying_remote(self, mock_auth_cls, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
         mock_client.list_dataset_packages.return_value = [
             _make_package("N:pkg:1", "test.lay", parent_id="N:collection:folder1"),
         ]
 
-        example_lay = os.path.join(os.path.dirname(__file__), "..", "example_lay", "ex1.lay")
+        example_lay = os.path.join(os.path.dirname(__file__), "..", "example_lay", "ex2.lay")
         with open(example_lay, "r") as f:
             lay_content = f.read()
 
@@ -84,12 +86,30 @@ class TestMain:
             os.environ.pop("SESSION_TOKEN", None)
             main()
 
-        # Verify delete → upload flow
-        mock_client.delete_packages.assert_called_once_with(["N:pkg:1"])
+        mock_client.delete_packages.assert_not_called()
+        mock_client.upload_file.assert_not_called()
+
+    @patch("process.PennsieveClient")
+    @patch("process.KeySecretAuthProvider")
+    def test_clean_mode_replaces_matching_package(self, mock_auth_cls, mock_client_cls):
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.list_dataset_packages.return_value = [
+            _make_package("N:pkg:1", "test.lay", parent_id="N:collection:folder1"),
+        ]
+
+        example_lay = os.path.join(os.path.dirname(__file__), "..", "example_lay", "ex2.lay")
+        with open(example_lay, "r") as f:
+            lay_content = f.read()
+
+        _setup_client_for_clean(mock_client, lay_content)
+
+        with patch.dict(os.environ, _env(PROCESS_MODE="clean"), clear=False):
+            os.environ.pop("SESSION_TOKEN", None)
+            main()
+
         mock_client.upload_file.assert_called_once()
-        upload_args = mock_client.upload_file.call_args
-        assert upload_args[0][0] == "D1"
-        assert upload_args[1]["folder_id"] == "N:collection:folder1"
+        mock_client.delete_packages.assert_called_once_with(["N:pkg:1"])
 
     @patch("process.PennsieveClient")
     @patch("process.KeySecretAuthProvider")
@@ -104,7 +124,8 @@ class TestMain:
             os.environ.pop("SESSION_TOKEN", None)
             main()
 
-        mock_client.get_package_files.assert_not_called()
+        mock_client.get_file_download_url.assert_not_called()
+        mock_client.download_file.assert_not_called()
 
     @patch("process.PennsieveClient")
     @patch("process.KeySecretAuthProvider")
@@ -153,20 +174,16 @@ class TestMain:
                 f.write("[Comments]\n0.000,0.000,0,131072,Has MRN 123\n")
 
         mock_client.download_file.side_effect = fake_download
-        mock_client.delete_packages.return_value = {"success": True}
-        mock_client.upload_file.return_value = None
-
         with patch.dict(os.environ, _env(RESTRICTED_WORDS="MRN"), clear=False):
             os.environ.pop("SESSION_TOKEN", None)
             main()
 
         # Second package should still be processed despite first failing
-        mock_client.delete_packages.assert_called_once_with(["N:pkg:2"])
+        assert mock_client.get_file_download_url.call_count == 1
 
     @patch("process.PennsieveClient")
     @patch("process.KeySecretAuthProvider")
-    def test_root_package_omits_folder_id(self, mock_auth_cls, mock_client_cls):
-        """Package at dataset root should upload without folder_id."""
+    def test_root_package_still_reports_without_remote_modifications(self, mock_auth_cls, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
         mock_client.list_dataset_packages.return_value = [
@@ -182,13 +199,12 @@ class TestMain:
             os.environ.pop("SESSION_TOKEN", None)
             main()
 
-        upload_args = mock_client.upload_file.call_args
-        assert upload_args[1]["folder_id"] is None
+        mock_client.upload_file.assert_not_called()
+        mock_client.delete_packages.assert_not_called()
 
     @patch("process.PennsieveClient")
     @patch("process.KeySecretAuthProvider")
-    def test_call_order_is_delete_then_upload(self, mock_auth_cls, mock_client_cls):
-        """Verify ordering: delete old package, then upload cleaned file."""
+    def test_no_delete_or_upload_when_matches_found(self, mock_auth_cls, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
         mock_client.list_dataset_packages.return_value = [
@@ -204,12 +220,8 @@ class TestMain:
             os.environ.pop("SESSION_TOKEN", None)
             main()
 
-        # Extract the order of relevant calls
-        call_names = [c[0] for c in mock_client.method_calls]
-        delete_idx = call_names.index("delete_packages")
-        upload_idx = call_names.index("upload_file")
-
-        assert delete_idx < upload_idx
+        mock_client.delete_packages.assert_not_called()
+        mock_client.upload_file.assert_not_called()
 
     @patch("process.WorkflowClient")
     @patch("process.PennsieveClient")
@@ -232,7 +244,7 @@ class TestMain:
             main()
 
         mock_wf_client.get_workflow_instance.assert_called_once_with("wf-run-123")
-        mock_client.list_dataset_packages.assert_called_once_with("N:dataset:resolved")
+        mock_client.list_dataset_packages.assert_called_once_with("N:dataset:resolved", include_source_files=False)
 
     @patch("process.PennsieveClient")
     @patch("process.KeySecretAuthProvider")
